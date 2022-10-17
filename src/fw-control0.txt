@@ -1,0 +1,23 @@
+           debug = 0
+           noisy = 1
+           print = 0 1 0  * print flags: 4x4 GT freqs, heterozygosity, allele-freqs
+         threads = 8 1    * #thread thread_start
+
+        rec_rate = 0.5 0.5 0.5   * r0 r1 r2
+     prob_misseg = 0.0    * probability of mis-segregation (gamete loss) when no crossover
+               N = 100  * population size
+         nchromo = 10      * No of chromosomes in the genome
+           nloci = 500   * No of loci per chromosome
+            ngen = 1000  * No of generations
+        init_pop = 0      * 0: HW with p=0.5; 1: F1
+
+   selected_loci = 1 1  2 1     /* chr1, locus1 & chr2, locus1 */
+      gt_fitness = 1  1  1  1     /* AABB AABb AAbB AAbb */
+                   1  1  1  1     /* AaBB AaBb AabB Aabb */
+                   1  1  1  1     /* aABB aABb aAbB aAbb */
+                   1  1  1  1     /* aaBB aaBb aabB aabb */
+
+*      gt_fitness = 1  2  3  4     /* AABB AABb AAbB AAbb */
+*                   5  6  7  8     /* AaBB AaBb AabB Aabb */
+*                   9 10 11 12     /* aABB aABb aAbB aAbb */
+*                  13 14 15 16     /* aaBB aaBb aabB aabb */
