@@ -166,7 +166,7 @@ int get_options(char* ctlf)
 
    fctl = zopen(ctlf, "r");
    if (noisy) printf("Reading options from %s..\n", ctlf);
-   for (; ; ) {
+   for ( ; ; ) {
       if (fgets(line, lline, fctl) == NULL) break;
       for (i = 0, t = 0, pline = line; i < lline && line[i]; i++) {
          if (isalnum(line[i])) {
@@ -231,7 +231,11 @@ int get_options(char* ctlf)
    fclose(fctl);
    if (nthreads <0 || nthreads > NTHREADS || nthreads > N)
       zerror("nthreads = %d, max %d, for %d individuals..", nthreads, NTHREADS, N);
+   
    if (--thread_start < 0) zerror("thread_start wrong..");
+#if(defined(__linux__) && defined(PIN_THREADS_CORE))
+   pin_to_core(thread_start);  /* this pins the master/initial thread */
+#endif
    return (0);
 }
 
@@ -357,6 +361,7 @@ int meiosis(char* gamete, char* zygote, int thread_id)
    if (debug) {
       print_zygote(stdout, zygote);
       print_gamete(stdout, gamete);
+      if (chromo != nchromo) printf("aha, a dead gamete..\n");
    }
    return(chromo == nchromo);  /* return 1 if a gamete is generated */
 }
@@ -372,6 +377,7 @@ void reproduction(int ind_start, int nind, int thread_id)
    }
 
    for (ind = ind_start; ind < ind_start + nind; ind++) {
+      if (debug) printf("*generating individual %2d *\n", ind+1);
       for (ngamete = 0; ngamete < 2; ) {
          gt = rndDiscreteAlias(ngt, gt_Falias, gt_Lalias);
          parent = (int)(gt_counts[gt] * rndu(tid));
@@ -535,8 +541,8 @@ int main(int argc, char* argv[])
    }
 
    for (igen = 0; igen < ngen; igen++) {
-      if (noisy >= 3 || (N >= 100 && ngen > 100 && (igen+1) % 10 == 0))
-         printf("\n* Gen %4d (%s): *", igen+1, printtime(timestr));
+      if (noisy >= 3 || (N >= 100 && ngen > 100 && (igen+1) % 2 == 0))
+         printf("\n*** Gen %4d (%s): ***", igen+1, printtime(timestr));
       if (print_opt)
          fprintf(fout, "%d", igen);
       status = update_pop_features(pop[curr_pop]);

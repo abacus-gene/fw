@@ -189,7 +189,7 @@ int meiosis(char* gamete, char* zygote)
    char breakpoints[1000] = {0};  /* crash if more than 1000 crossovers */
 
    /* if(missegregation), later chromosomes are not generated. */
-   if(debug) memset(g, 'x' - '0', nchromo * nloci * sizeof(char));
+   if(debug) memset(g, 249 - '0', nchromo * nloci * sizeof(char));
    for (chromo = 0; chromo < nchromo; chromo++) {
       nrec = 0;
       gt0 = *z++;
@@ -219,6 +219,8 @@ int meiosis(char* gamete, char* zygote)
    if (debug) {
       print_zygote(stdout, zygote);
       print_gamete(stdout, gamete);
+      if (chromo != nchromo)
+         printf("aha, a dead gamete..\n");
    }
    return(chromo==nchromo);  /* return 1 if a gamete is generated */
 }
@@ -230,6 +232,7 @@ void reproduction(void)
 
    g[0] = gamete[0]; g[1] = gamete[1];
    for (ind = 0; ind < N; ind++) {
+      if (debug) printf("*generating individual %2d *\n", ind + 1);
       for (ngamete = 0; ngamete < 2; ) {
          gt = rndDiscreteAlias(ngt, gt_Falias, gt_Lalias);
          parent = (int)(gt_counts[gt] * rndu(0));
@@ -381,7 +384,7 @@ int main(int argc, char* argv[])
    initialize(outf);
    for (igen = 0; igen < ngen; igen++) {      
       if(noisy>=3 || (N >= 100 && ngen>100 && (igen+1)%10==0))
-         printf("\n* Gen %4d (%s): *", igen+1, printtime(timestr));
+         printf("\n*** Gen %4d (%s): ***", igen+1, printtime(timestr));
       if (print_opt) 
          fprintf(fout, "%d", igen);
       status = update_pop_features(pop[curr_pop]);
