@@ -1,0 +1,4 @@
+src/*.obj 
+src/*.o
+src/*.exe
+vc
