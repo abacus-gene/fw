@@ -14,7 +14,7 @@ int N = 1000, nchromo = 16, nloci = 200, ngen = 1000;
 double rec_rate0 = 0.057, rec_rate1 = 0.057, rec_rate2 = 0.057 / 100, rec_rate[4 * 4];
 double prob_misseg = 0.45;
 int g_completeness;
-double generation_gap[2], prob_selfing = 0.15, prob_asexual = 0.05, migration_rate = 1e-4;
+double prob_selfing = 0.15, prob_asexual = 0.05, migration_rate = 1e-4;
 int init_pop = 1, print_opt = 1;
 
 /* pop[0] & pop[1] are curr and next generations */
@@ -36,12 +36,12 @@ int* fitness_Lalias;
 
 int get_options(char* ctlf)
 {
-   int iopt, i, nopt = 18, lline = 4096;
+   int iopt, i, nopt = 17, lline = 4096;
    int print_GT = 0, print_h = 0, print_allelef = 0;
    char line[4096], * pline, opt[32], * comment = "*#/";
    char* optstr[] = { "debug", "noisy", "print", "rec_rate", "prob_misseg", "N", "nchromo",
       "nloci", "ngen", "selected_loci", "gt_fitness", "init_pop", "g_completeness",
-      "generation_gap", "prob_selfing", "prob_asexual", "migration_rate", "threads" };
+      "prob_selfing", "prob_asexual", "migration_rate", "threads" };
    double t, * fit = gt_fitness;
    FILE* fctl;
 
@@ -100,15 +100,12 @@ int get_options(char* ctlf)
             case (12):
                g_completeness = (int)t;  break;
             case (13):
-               sscanf(pline + 1, "%lf%lf", &generation_gap[0], &generation_gap[1]);
-               break;
-            case (14):
                prob_selfing = t;  break;
-            case (15):
+            case (14):
                prob_asexual = t;  break;
-            case (16):
+            case (15):
                migration_rate = t;  break;
-            case (17):
+            case (16):
                /* threads */
                /* sscanf(pline + 1, "%d%d", &nthreads, &thread_start); */
                break;
@@ -167,7 +164,7 @@ int initialize(char outf[])
             pop[curr_gen][ind][j] = (char)0;
       ind = (int)(N * rndu(0));
       for (j = 0; j < nchromo * nloci; j++)
-         pop[curr_gen][ind][j] = (char)1;
+         pop[curr_gen][ind][j] = (char)3;   /* 1 immigrant of pure type 1 */
    }
    else if (init_pop == 1)     /* F1 heterozygote 0/1 */
       for (ind = 0; ind < N; ind++)
@@ -250,6 +247,43 @@ int meiosis(char* gamete, char* zygote, int thread_id_tmp)
    return(chromo==nchromo);  /* return 1 if a gamete is generated */
 }
 
+int individual_fitness(int curr_gen, int update_completeness)
+{
+   /* this calculates the fitness values for all individuals.
+   */
+   int i, j, loc0, loc1;
+   char gt, * z;
+   double t, h = 0;  /* average heterozygosity at all loci*/
+   double* space, c[2];
+
+   if ((space = malloc(N * sizeof(double))) == NULL) zerror("oom space");
+
+   if (update_completeness) {  /* this is needed for generation 0. */
+      for (i = 0; i < N; i++) {
+         z = pop[curr_gen][i];
+         c[0] = c[1] = 0;  /* fitness based on genome completeness */
+         for (j = 0; j < nchromo * nloci; j++) {
+            if (z[j] != 3) c[0] ++;
+            if (z[j] != 0) c[1] ++;
+         }
+         fitness[curr_gen][i] = max2(c[0], c[1]) / ((double)nchromo * nloci);
+      }
+   }
+
+   /* use 2-loci genotype fitness to modify individual fitness */
+   for (i = 0, t = 0; i < N; i++) {
+      loc0 = sloci[0][0] * 4 + sloci[0][1];
+      loc1 = sloci[1][0] * 4 + sloci[1][1];
+      gt = pop[curr_gen][i][loc0] * 4 + pop[curr_gen][i][loc1];
+      t += fitness[curr_gen][i] *= gt_fitness[gt];
+   }
+   for (i = 0; i < N; i++) fitness[curr_gen][i] /= t;
+
+   MultiNomialAliasSetTable(N, fitness[curr_gen], fitness_Falias, fitness_Lalias, space);
+   free(space);
+   return(0);
+}
+
 void reproduction(int ind_start, int nind, int thread_id)
 {
    /* pop[curr_gen] -> pop[1-curr_gen]; fitness[curr_gen] -> fitness[1-curr_gen];
@@ -265,18 +299,22 @@ void reproduction(int ind_start, int nind, int thread_id)
       if (debug) printf("*generating individual %2d *\n", ind + 1);
       z = pop[1 - curr_gen][ind];
       if (rndu(0) < prob_asexual) {
-         parent = (int)(N * rndu(0));
+         parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
          memmove(z, pop[curr_gen][parent], nchromo * nloci * sizeof(char));
          fitness[1 - curr_gen][ind] = fitness[curr_gen][parent];
       }
       else {
          for (ngamete = 0, selfing = 0; ngamete < 2; ) {
             parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
-            if (meiosis(g[ngamete], pop[curr_gen][parent], 0))  ngamete++;
-            if (ngamete == 1 && rndu(0) < prob_selfing) {
-               selfing = 1;
-               memmove(g[1], g[0], nchromo * nloci * sizeof(char));
+            if (meiosis(g[ngamete], pop[curr_gen][parent], 0))
                ngamete++;
+            if (ngamete == 1 && selfing == 0) {
+               if (rndu(0) < prob_selfing) {
+                  memmove(g[1], g[0], nchromo * nloci * sizeof(char));
+                  ngamete++;
+               }
+               else
+                  selfing = -1;  /* no selfing */
             }
          }
          c[0] = c[1] = 0;  /* fitness based on genome completeness */
@@ -294,8 +332,8 @@ void reproduction(int ind_start, int nind, int thread_id)
       ind = (int)(N * rndu(0));
       z = pop[1 - curr_gen][ind];
       for (i = 0; i < nchromo * nloci; i++)
-         z[i] = (char)1;
-      fitness[1 - curr_gen][ind] = 1;
+         z[i] = (char)3;
+      fitness[1 - curr_gen][ind] = 1;  /* genome-completeness */
    }
 }
 
@@ -344,50 +382,6 @@ void print_gamete(FILE* fout, char* gamete)
    g[pos-1] = '\0';
    fprintf(fout, "gamete: %s\n", g);
    free(g);
-}
-
-
-int individual_fitness(int curr_gen, int update_completeness)
-{
-   /* this calculates the fitness values for all individuals.
-   */
-   int i, j, loc0, loc1;
-   char gt, * z;
-   double gt_fitness_t[16], ggap, t, h = 0;  /* average heterozygosity at all loci*/
-   double* space, c[2];
-
-   if ((space = malloc(N * sizeof(double))) == NULL) zerror("oom space");
-
-   if (update_completeness) {  /* this is needed for generation 0. */
-      for (i = 0; i < N; i++) {
-         z = pop[curr_gen][i];
-         c[0] = c[1] = 0;  /* fitness based on genome completeness */
-         for (j = 0; j < nchromo * nloci; j++) {
-            if (z[j] != 3) c[0] ++;
-            if (z[j] != 0) c[1] ++;
-         }
-         fitness[curr_gen][i] = max2(c[1], c[1]) / ((double)nchromo * nloci);
-      }
-   }
-
-   ggap = (int)(generation_gap[0] + rndNormal() * generation_gap[1]);
-   for (i = 0; i < ngt; i++)
-      gt_fitness_t[i] = pow(gt_fitness[i], ggap);
-
-   /* count 2-loci genotypes, ind i has genotype gt */
-   memset(gt_freqs, 0, ngt * sizeof(double));
-   for (i = 0, t = 0; i < N; i++) {
-      loc0 = sloci[0][0] * 4 + sloci[0][1];
-      loc1 = sloci[1][0] * 4 + sloci[1][1];
-      gt = pop[curr_gen][i][loc0] * 4 + pop[curr_gen][i][loc1];
-      t += fitness[curr_gen][i] *= gt_fitness_t[gt];
-   }
-   for (i = 0; i < ngt; i++) gt_freqs[i] /= (double)N;
-   for (i = 0; i < N; i++) fitness[curr_gen][i] /= t;
-
-   MultiNomialAliasSetTable(N, fitness[curr_gen], fitness_Falias, fitness_Lalias, space);
-   free(space);
-   return(0);
 }
 
 int update_pop_features(int curr_gen)

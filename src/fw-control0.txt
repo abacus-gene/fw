@@ -16,7 +16,6 @@
    migration_rate = 1e-5  : migration rate per generation (m)
 
    g_completeness = 1  * 1: yes; 0: no
-   generation_gap = 1000 100  # N(1000, 100^2)
      prob_selfing = 0.10 : autodiploidization
      prob_asexual = 0.05 : asexual 
 

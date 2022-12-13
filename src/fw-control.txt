@@ -16,14 +16,13 @@
    migration_rate = 1e-5  : migration rate per generation (m)
 
    g_completeness = 1  * 1: yes; 0: no
-   generation_gap = 1000 100  # N(1000, 100^2)
      prob_selfing = 0.0 : autodiploidization
      prob_asexual = 0.05 : asexual reproduction
 
    selected_loci = 1 1  2 1       /* chr1, locus1 & chr2, locus1 */
       gt_fitness = 1    1    1    1        /* AABB AABb AAbB AAbb */
-                   1.01 1.01 1.01 1.01     /* AaBB AaBb AabB Aabb */
-                   1.01 1.01 1.01 1.01     /* aABB aABb aAbB aAbb */
-                   1.01 1.01 1.01 1.01     /* aaBB aaBb aabB aabb */
+                   1    1    1    1        /* AaBB AaBb AabB Aabb */
+                   1    1    1    1        /* aABB aABb aAbB aAbb */
+                   100  1    1    1        /* aaBB aaBb aabB aabb */
 
         threads = 18 109 1
