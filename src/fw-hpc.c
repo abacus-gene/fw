@@ -236,7 +236,7 @@ int meiosis(char* gamete, char* zygote, int thread_id)
    char breakpoints[1000] = { 0 };  /* crash if more than 1000 crossovers */
 
    /* if(missegregation), some chromosomes are not generated. */
-   if (debug) memset(g, 'x' - '0', nchromo * nloci * sizeof(char));
+   if (debug) memset(g, '.' - '0', nchromo * nloci * sizeof(char));
    for (chromo = 0; chromo < nchromo; chromo++) {
       nrec = 0;
       gt0 = *z++;
@@ -334,13 +334,13 @@ void reproduction(int ind_start, int nind, int thread_id)
    for (ind = ind_start; ind < ind_start + nind; ind++) {
       if (debug) printf("*generating individual %2d *\n", ind+1);
       z = pop[next_gen][ind];
-      if (rndu(tid) < prob_asexual) {
+      if (prob_asexual > 0 && rndu(tid) < prob_asexual) {  /* asexual */
          parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
          memmove(z, pop[curr_gen][parent], nchromo * nloci * sizeof(char));
          fitness[next_gen][ind] = fitness[curr_gen][parent];
       }
       else {
-         selfing = (rndu(tid) < prob_selfing);
+         selfing = (prob_selfing > 0 && rndu(tid) < prob_selfing);
          for (igamete = 0; igamete < 2 - selfing; ) {
             parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
             if (meiosis(g[igamete], pop[curr_gen][parent], tid))
@@ -509,6 +509,14 @@ int main(int argc, char* argv[])
          reproduction(0, N, 0);
       curr_gen = !curr_gen;
    }
+   if (print_opt) {
+      fprintf(fout, "\ngenotypes in generation #%d (N = %d)\n", ngen, N);
+      for (i = 0; i < N; i++) {
+         fprintf(fout, "indiv %2d: ", i + 1);
+         print_str(fout, pop[!curr_gen][i]);
+      }
+   }
+
    freemem();
    if (print_opt) fclose(fout);
    if (nthreads > 1) threads_exit();

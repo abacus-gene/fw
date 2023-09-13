@@ -217,7 +217,7 @@ int meiosis(char* gamete, char* zygote, int thread_id_tmp)
    char breakpoints[1000] = {0};  /* crash if more than 1000 crossovers */
 
    /* if(missegregation), later chromosomes are not generated. */
-   if(debug) memset(g, 249 - '0', nchromo * nloci * sizeof(char));
+   if(debug) memset(g, '.' - '0', nchromo * nloci * sizeof(char));
    for (chromo = 0; chromo < nchromo; chromo++) {
       nrec = 0;
       gt0 = *z++;
@@ -295,12 +295,12 @@ int individual_fitness(int curr_gen)
 void reproduction(int ind_start, int nind, int thread_id)
 {
    /* pop[curr_gen] -> pop[next_gen] */
-   int i, ind, igamete, parent, selfing, next_gen= !curr_gen;
+   int i, ind, igamete, parent, selfing = 0, next_gen = !curr_gen;
    char* z, * g[2];
 
    if (debug) {
       printf("\nfitness (probs) of N = %d individuals in parent pop", N);
-      matout2(stdout, fitness[curr_gen], 1, N, 10, 6);
+      matout2(stdout, fitness[curr_gen], 1, N, 8, 4);
       for (i = 0; i < N; i++) {
          printf("indiv %2d: ", i+1);
          print_str(stdout, pop[curr_gen][i]);
@@ -311,13 +311,13 @@ void reproduction(int ind_start, int nind, int thread_id)
    for (ind = 0; ind < N; ind++) {
       if (debug) printf("\n*generating individual %2d *\n", ind + 1);
       z = pop[next_gen][ind];
-      if (rndu(0) < prob_asexual) {
+      if (prob_asexual > 0 && rndu(0) < prob_asexual) {  /* asexual */
          parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
          memmove(z, pop[curr_gen][parent], nchromo * nloci * sizeof(char));
          fitness[next_gen][ind] = fitness[curr_gen][parent];
       }
       else {
-         selfing = (rndu(0) < prob_selfing);
+         selfing = (prob_selfing && rndu(0) < prob_selfing);
          for (igamete = 0; igamete < 2 - selfing; ) {
             parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
             if (meiosis(g[igamete], pop[curr_gen][parent], 0))
@@ -365,6 +365,7 @@ void print_zygote(FILE* fout, char* zygote)
 
 void print_str(FILE* fout, char* str)
 {
+/* gametes are coded 0 1 and zygotes are coded 0 1 2 3. */
    int i, j, pos = 0;
 
    for (i = 0, pos = 0; i < nchromo; i++) {
@@ -442,7 +443,7 @@ int print_pop_features(FILE* fout, int curr_gen)
 int main(int argc, char* argv[])
 {
    char ctlf[4096] = "fw-control0.txt", outf[4096]="out.txt", timestr[64];
-   int igen;
+   int igen, i;
 
    if (argc > 1) strcpy(ctlf, argv[1]);
    if (argc > 2) strcpy(outf, argv[2]);
@@ -462,6 +463,15 @@ int main(int argc, char* argv[])
       reproduction(0, N, 0);
       curr_gen = !curr_gen;
    }
+
+   if (print_opt) {
+      fprintf(fout, "\ngenotypes in generation #%d (N = %d)\n", ngen, N);
+      for (i = 0; i < N; i++) {
+         fprintf(fout, "indiv %2d: ", i + 1);
+         print_str(fout, pop[!curr_gen][i]);
+      }
+   }
+
    freemem();
    if (print_opt) fclose(fout);
 }
