@@ -1,57 +1,46 @@
-﻿/* Fisher-Wright simulation program for forward simualtion of reproduction, 
-   recombination, and introgression.
-   ziheng yang, 29 March 2022
-
-   gcc -o fw-hpc -Wno-unused-result -O3 fw-hpc.c fw-sub.c threads.c -lm -lpthread
-   icc -o fw-hpc -O3 fw-hpc.c fw-sub.c threads.c -lm -lpthread
-   cl -Ox fw-hpc.c fw-sub.c threads.c -link libpthreadVC3.lib
-   ./fw-hpc fw-control0.txt
+/* genetics.c
 */
-
 #include "fw.h"
 
-int debug = 1, noisy = 3;
-int init_pop = 1, print_opt = 1;
-int N = 1000, nchromo = 16, nloci = 200, ngen = 1000;
-double rec_rate0 = 0.057, rec_rate1 = 0.057, rec_rate2 = 0.057 / 100, rec_rate[4 * 4];
-double prob_misseg = 0.45;
-int g_completeness;
-double prob_selfing = 0.15, prob_asexual = 0.05, migration_rate = 1e-4;
+extern int debug, noisy;
+extern int init_pop, print_opt;
+extern int N, nchromo, nloci, ngen, nrepl;
+extern double rec_rate0, rec_rate1, rec_rate2, rec_rate[4 * 4];
+extern double prob_misseg;
+extern int g_completeness;
+extern double prob_selfing, prob_asexual, migration_rate;
 
 /* pop[0] & pop[1] are curr and next generations */
-char curr_gen = 0, ** pop[2], * gamete[2];
+extern char curr_gen, ** pop[2], * gamete[2];
 
 /* two-locus genotype for viability selection. */
-int ngt = 4 * 4;
-double gt_freqs[4 * 4];
-int sloci[2][2] = { {0,0}, {1,0} };            /* selected loci: chr0, locus0 & chr1, locus0 */
-double gt_fitness[4 * 4] = { 1,  1,  1,  1,    /* AABB AABb AAbB AAbb */
-                            50, 50, 50, 50,    /* AaBB AaBb AabB Aabb */
-                            50, 50, 50, 50,    /* aABB aABb aAbB aAbb */
-                            100,50, 50, 1 };   /* aaBB aaBb aabB aabb */
-double* f_allele;
-FILE* fout;
-double* fitness[2], *fitness_Falias;
-int* fitness_Lalias;
+extern int ngt_sloci;
+extern double gt2_freqs[4 * 4];
+extern int sloci[2][2];             /* selected loci: chr0, locus0 & chr1, locus0 */
+extern double gt_fitness[4 * 4];
 
-int nthreads = 4, thread_start = 0;
+extern double* f_allele;
+extern FILE* fout;
+extern double* fitness[2], * fitness_Falias;
+extern int* fitness_Lalias;
+
+extern int nthreads, thread_start, thread_step;
 extern thread_data_t thread_data[];
-
 
 int get_options(char* ctlf)
 {
-   int iopt, i, nopt = 18, lline = 4096;
+   int iopt, i, nopt = 19, lline = 4096;
    int print_GT = 0, print_h = 0, print_allelef = 0, seed = -1;
    char line[4096], * pline, opt[32], * comment = "*#/";
-   char* optstr[] = { "debug", "noisy", "seed", "print", "rec_rate", "prob_misseg", "N", 
-      "nchromo", "nloci", "ngen", "selected_loci", "gt_fitness", "init_pop", "g_completeness", 
+   char* optstr[] = { "debug", "noisy", "seed", "print", "rec_rate", "prob_misseg", "N",
+      "nchromo", "nloci", "ngen", "nrepl", "selected_loci", "gt_fitness", "init_pop", "g_completeness",
       "prob_selfing", "prob_asexual", "migration_rate", "threads" };
    double t, * fit = gt_fitness;
    FILE* fctl;
 
    fctl = zopen(ctlf, "r");
    if (noisy) printf("Reading options from %s..\n", ctlf);
-   for ( ; ; ) {
+   for (; ; ) {
       if (fgets(line, lline, fctl) == NULL) break;
       for (i = 0, t = 0, pline = line; i < lline && line[i]; i++) {
          if (isalnum(line[i])) {
@@ -87,31 +76,33 @@ int get_options(char* ctlf)
             case (7): nchromo = (int)t;  break;
             case (8): nloci = (int)t;  break;
             case (9): ngen = (int)t;  break;
-            case (10):
+            case (10): nrepl = (int)t;  break;
+            case (11):
                sscanf(pline + 1, "%d%d%d%d", &sloci[0][0], &sloci[0][1], &sloci[1][0], &sloci[1][1]);
                if (--sloci[0][0] < 0 || sloci[0][0] >= nchromo) zerror("selected_loci outside range");
                if (--sloci[1][0] < 0 || sloci[1][0] >= nchromo) zerror("selected_loci outside range");
                if (--sloci[0][1] < 0 || sloci[0][1] >= nloci) zerror("selected_loci outside range");
                if (--sloci[1][1] < 0 || sloci[1][1] >= nloci) zerror("selected_loci outside range");
                break;
-            case (11): /* gt_fitness */
+            case (12): /* gt_fitness */
                sscanf(pline + 1, "%lf%lf%lf%lf", fit + 0, fit + 1, fit + 2, fit + 3);
                for (i = 1; i < 4; i++) {
                   fscanf(fctl, "%lf%lf%lf%lf", fit + i * 4 + 0, fit + i * 4 + 1, fit + i * 4 + 2, fit + i * 4 + 3);
                   fgets(line, 1024, fctl);
                }
                break;
-            case (12): init_pop = (int)t;  break;
-            case (13):
-               g_completeness = (int)t;  break;
+            case (13): init_pop = (int)t;  break;
             case (14):
-               prob_selfing = t;  break;
+               g_completeness = (int)t;  break;
             case (15):
-               prob_asexual = t;  break;
+               prob_selfing = t;  break;
             case (16):
-               migration_rate = t;  break;
+               prob_asexual = t;  break;
             case (17):
-               sscanf(pline + 1, "%d%d", &nthreads, &thread_start);
+               migration_rate = t;  break;
+            case (18):
+               sscanf(pline + 1, "%d%d%d", &nthreads, &thread_start, &thread_step);
+               /* thread_step is not used right now. */
                break;
             }
             break;
@@ -123,17 +114,17 @@ int get_options(char* ctlf)
       }
    }
    fclose(fctl);
-   
-   if (N * migration_rate > 1)
-      printf("high migration rate, Nm = %.6f\n", N * migration_rate);
-   /* SetSeed(seed, 0); */
 
-   if (nthreads <0 || nthreads > NTHREADS || nthreads > N)
+   if (nthreads < 0 || nthreads > NTHREADS || nthreads > N)
       zerror("nthreads = %d, max %d, for %d individuals..", nthreads, NTHREADS, N);
    if (--thread_start < 0) zerror("thread_start wrong..");
 #if(defined(__linux__) && defined(PIN_THREADS_CORE))
    pin_to_core(thread_start);  /* this pins the master/initial thread */
 #endif
+
+   for (i = 0; i < nthreads; ++i)
+      SetSeed(seed < 0 ? -1 : seed+2*i, i);
+
    return (0);
 }
 
@@ -144,6 +135,9 @@ int initialize(char outf[])
                              "AaBB", "AaBb", "AabB", "Aabb",
                              "aABB", "aABb", "aAbB", "aAbb",
                              "aaBB", "aaBb", "aabB", "aabb" };
+
+   printf("2-loci selection scheme: ");
+   matout2(stdout, gt_fitness, 4, 4, 10, 5);
 
    if (print_opt) {
       fout = zopen(outf, "w");
@@ -157,7 +151,7 @@ int initialize(char outf[])
       if (print_opt & 4) {  /* allele freq at nchromo*nloci loci */
          for (i = 0; i < nchromo; i++)
             for (j = 0; j < nloci; j++)
-               fprintf(fout, "\tf_L%d_a%d", i+1, j+1);
+               fprintf(fout, "\tf_L%d_a%d", i + 1, j + 1);
       }
       fprintf(fout, "\n");
    }
@@ -170,34 +164,20 @@ int initialize(char outf[])
    /* allocate memory for current generation [0] and next generation [1], initialize as F1 */
    for (i = 0; i < 2; i++) {
       if ((pop[i] = malloc(N * sizeof(char*))) == NULL) zerror("oom");
-      for (ind = 0; ind < N; ind++)
-         if ((pop[i][ind] = malloc(nchromo * nloci * sizeof(char))) == NULL) zerror("oom");
+      for (ind = 0; ind < N; ind++) {
+         if ((pop[i][ind] = malloc(nchromo * nloci * sizeof(char))) == NULL)
+            zerror("oom");
+      }
    }
-   if (migration_rate > 0) {
-      for (ind = 0; ind < N; ind++)
-         for (j = 0; j < nchromo * nloci; j++)
-            pop[curr_gen][ind][j] = (char)0;
-      ind = (int)(N * rndu(0));
-      for (j = 0; j < nchromo * nloci; j++)
-         pop[curr_gen][ind][j] = (char)3;   /* 1 immigrant of pure type 1 */
-   }
-   else if (init_pop == 1)     /* F1 heterozygote 0/1 */
-      for (ind = 0; ind < N; ind++)
-         for (j = 0; j < nchromo * nloci; j++)
-            pop[curr_gen][ind][j] = (char)1;
-   else                        /* HW with p=0.5 */
-      for (ind = 0; ind < N; ind++)
-         for (j = 0; j < nchromo * nloci; j++)
-            pop[curr_gen][ind][j] = (char)(rndu(0) * 4);
 
    /* gamete[2] are used to form the new zygote */
-   if(nthreads>1) 
+   if (nthreads > 1)
       for (i = 0; i < nthreads; i++) {
          if ((thread_data[i].gamete[0] = malloc(2 * nchromo * nloci * sizeof(char))) == NULL)
             zerror("oom");
          thread_data[i].gamete[1] = thread_data[i].gamete[0] + nchromo * nloci;
       }
-   else {   /* gamete[2] are used to form the new zygote */
+   else {
       if ((gamete[0] = malloc(2 * nchromo * nloci * sizeof(char))) == NULL) zerror("oom");
       gamete[1] = gamete[0] + nchromo * nloci;
    }
@@ -205,9 +185,11 @@ int initialize(char outf[])
    if ((f_allele = malloc(nchromo * nloci * sizeof(double))) == NULL) zerror("oom f_allele ");
    if ((fitness[0] = malloc(N * 4 * sizeof(double))) == NULL) zerror("oom fitness ");
    fitness[1] = fitness[0] + N;
-   fitness_Falias = fitness[0] + N*2;
-   fitness_Lalias = (int*)(fitness[0] + N*3);
+   fitness_Falias = fitness[0] + N * 2;
+   fitness_Lalias = (int*)(fitness[0] + N * 3);
 
+   thread_data[0].ind_start = 0;  thread_data[0].nind = N;
+   if (nthreads > 1)  threads_init();
    return(0);
 }
 
@@ -221,7 +203,7 @@ void freemem(void)
    }
    if (nthreads > 1)
       for (i = 0; i < nthreads; i++)  free(thread_data[i].gamete[0]);
-   else 
+   else
       free(gamete[0]);
    free(f_allele);
    free(fitness[0]);
@@ -232,11 +214,12 @@ int meiosis(char* gamete, char* zygote, int thread_id)
    /* zygote -> gamete.  This returns 1 for a viable gamete and 0 for mis-segregation
    */
    int tid = thread_id, nrec, chromo, locus, i, side;  /* side = 0 or 1 */
-   char* g = gamete, * z = zygote, gt0, gt;  /* gt0 gt are genotypes at adjacent loci */
+   char* g = gamete, * z = zygote, gt0, gt;  /* gt0, gt are genotypes at adjacent loci */
    char breakpoints[1000] = { 0 };  /* crash if more than 1000 crossovers */
 
    /* if(missegregation), some chromosomes are not generated. */
-   if (debug) memset(g, '.' - '0', nchromo * nloci * sizeof(char));
+   if (debug && thread_id == 0)
+      memset(g, '.' - '0', nchromo * nloci * sizeof(char));
    for (chromo = 0; chromo < nchromo; chromo++) {
       nrec = 0;
       gt0 = *z++;
@@ -246,7 +229,7 @@ int meiosis(char* gamete, char* zygote, int thread_id)
          gt = *z++;
          if (rndu(tid) < rec_rate[gt0 * 4 + gt]) { /* crossover with prob rec_rate */
             side = !side;
-            if (debug) {
+            if (debug && thread_id == 0) {
                if (nrec > 1000) zerror("many crossovers");
                breakpoints[nrec] = locus;
             }
@@ -255,15 +238,15 @@ int meiosis(char* gamete, char* zygote, int thread_id)
          *g++ = side ? (gt >> 1) : (gt & 1);
          gt0 = gt;
       }
-      if (debug) {
-         printf("chromo %d, nrec = %2d:", chromo, nrec);
+      if (debug && thread_id == 0) {
+         printf("  chromo %d, nrec = %2d:", chromo+1, nrec);
          for (i = 0; i < nrec; i++) printf("%2d ", breakpoints[i]);
          printf("\n");
       }
-      if (nrec == 0 && rndu(tid) < prob_misseg)  /* mis-segregation or gamete loss */
+      if (nrec == 0 && rndu(tid) < prob_misseg)  /* mis-segregation or gamete death */
          break;
    }
-   if (debug) {
+   if (debug && thread_id == 0) {
       print_zygote(stdout, zygote);
       printf("gamete: ");
       print_str(stdout, gamete);
@@ -277,15 +260,18 @@ int individual_fitness(int curr_gen)
 {
 /* this calculates the fitness values for all individuals.
 */
-   int i, j, loc0, loc1;
-   char gt, * z;
-   double t, h = 0;  /* average heterozygosity at all loci*/
+   int i, j;
+   int loc0 = sloci[0][0] * nloci + sloci[0][1];  /* 1st selected locus */
+   int loc1 = sloci[1][0] * nloci + sloci[1][1];  /* 2nd selected locus */
+   int gt2loci, gt0, gt1;
+   char* z;
+   double t, h = 0;  /* average heterozygosity at all loci */
    double* space, c[2];
 
    if ((space = malloc(N * sizeof(double))) == NULL) zerror("oom space");
 
    for (i = 0; i < N; i++) fitness[curr_gen][i] = 1;
-   if (g_completeness) {  /* this is needed for generation 0. */
+   if (g_completeness) {
       for (i = 0; i < N; i++) {
          z = pop[curr_gen][i];
          c[0] = c[1] = 0;  /* fitness based on genome completeness */
@@ -297,12 +283,10 @@ int individual_fitness(int curr_gen)
       }
    }
 
-   /* use 2-loci genotype fitness to modify individual fitness */
+   /* use 2-loci genotype viability to modify individual fitness */
    for (i = 0, t = 0; i < N; i++) {
-      loc0 = sloci[0][0] * 4 + sloci[0][1];
-      loc1 = sloci[1][0] * 4 + sloci[1][1];
-      gt = pop[curr_gen][i][loc0] * 4 + pop[curr_gen][i][loc1];
-      t += fitness[curr_gen][i] *= gt_fitness[gt];
+      gt2loci = pop[curr_gen][i][loc0] * 4 + pop[curr_gen][i][loc1];
+      t += (fitness[curr_gen][i] *= gt_fitness[gt2loci]);
    }
    for (i = 0; i < N; i++) fitness[curr_gen][i] /= t;
 
@@ -314,52 +298,51 @@ int individual_fitness(int curr_gen)
 void reproduction(int ind_start, int nind, int thread_id)
 {
    /* pop[curr_gen] -> pop[next_gen] */
-   int tid=thread_id, i, ind, igamete, parent, selfing, next_gen = !curr_gen;
-   char *z, *g[2];
+   int tid = thread_id, i, ind, igamete, parent, selfing, next_gen = !curr_gen;
+   char* z, * g[2];
 
-   if (debug) {
-      printf("\nfitness (probs) of N = %d individuals in parent pop", N);
-      matout2(stdout, fitness[curr_gen], 1, N, 10, 6);
+   if (debug && thread_id==0) {
       for (i = 0; i < N; i++) {
          printf("indiv %2d: ", i + 1);
          print_str(stdout, pop[curr_gen][i]);
       }
+      printf("fitness (probs) of N = %d individuals in parent pop:", N);
+      matout2(stdout, fitness[curr_gen], 1, N, 8, 4);
    }
-   
-   g[0] = gamete[0]; g[1] = gamete[1];
-   if (nthreads > 1) {
-      g[0] = thread_data[tid].gamete[0]; g[1] = thread_data[tid].gamete[1];
+   if (nthreads <= 1) {
+      g[0] = gamete[0]; g[1] = gamete[1];
+   }
+   else {
+      g[0] = thread_data[tid].gamete[0];
+      g[1] = thread_data[tid].gamete[1];
    }
 
    for (ind = ind_start; ind < ind_start + nind; ind++) {
-      if (debug) printf("*generating individual %2d *\n", ind+1);
+      if (debug && thread_id == 0) printf("\n**Reproducing, individual %2d**\n", ind + 1);
       z = pop[next_gen][ind];
-      if (prob_asexual > 0 && rndu(tid) < prob_asexual) {  /* asexual */
-         parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
-         memmove(z, pop[curr_gen][parent], nchromo * nloci * sizeof(char));
-         fitness[next_gen][ind] = fitness[curr_gen][parent];
-      }
+      /* replace ind by an immigrant */
+      if (migration_rate > 0 && rndu(0) < migration_rate) /* ind is immigrant */
+         memset(z, 3, nchromo * nloci);
       else {
-         selfing = (prob_selfing > 0 && rndu(tid) < prob_selfing);
-         for (igamete = 0; igamete < 2 - selfing; ) {
+
+         if (prob_asexual > 0 && rndu(tid) < prob_asexual) {  /* asexual */
             parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
-            if (meiosis(g[igamete], pop[curr_gen][parent], tid))
-               igamete++;
-            if (igamete && selfing)
-               memmove(g[1], g[0], nchromo * nloci * sizeof(char));
+            memmove(z, pop[curr_gen][parent], nchromo * nloci * sizeof(char));
+            fitness[next_gen][ind] = fitness[curr_gen][parent];
          }
-         for (i = 0; i < nchromo * nloci; i++)
-            z[i] = g[0][i] * 2 + g[1][i];
-      }
-   }
-   if (thread_id == 0) {  
-      if (N * migration_rate > 1)  /* migration rate m */
-         printf("high migration rate, Nm = %.6f\n", N * migration_rate);
-      if (rndu(0) < N * migration_rate) {
-         ind = (int)(N * rndu(0));
-         z = pop[next_gen][ind];
-         for (i = 0; i < nchromo * nloci; i++)
-            z[i] = (char)3;
+         else {
+            /* if selfing, 1 gamete is produced from meiosis, the second copied. */
+            selfing = (prob_selfing > 0 && rndu(tid) < prob_selfing);
+            for (igamete = 0; igamete < 2 - selfing; ) {
+               parent = rndDiscreteAlias(N, fitness_Falias, fitness_Lalias);
+               if (meiosis(g[igamete], pop[curr_gen][parent], tid))
+                  igamete++;
+               if (igamete && selfing)  /* the first gamete is already produced */
+                  memmove(g[1], g[0], nchromo * nloci * sizeof(char));
+            }
+            for (i = 0; i < nchromo * nloci; i++)
+               z[i] = g[0][i] * 2 + g[1][i];
+         }
       }
    }
 }
@@ -367,7 +350,7 @@ void reproduction(int ind_start, int nind, int thread_id)
 void print_zygote(FILE* fout, char* zygote)
 {
    int i, j, pos;
-   char* g[2], * z, gt;  /* g[2] are two gametes */
+   char* g[2], gt;  /* g[2] are two gametes */
 
    if ((g[0] = malloc(2 * nchromo * (nloci + 1) * sizeof(char))) == NULL) zerror("oom");
    g[1] = g[0] + nchromo * (nloci + 1);
@@ -391,6 +374,7 @@ void print_zygote(FILE* fout, char* zygote)
 
 void print_str(FILE* fout, char* str)
 {
+   /* gametes are coded 0 1 and zygotes are coded 0 1 2 3. */
    int i, j, pos = 0;
 
    for (i = 0, pos = 0; i < nchromo; i++) {
@@ -404,29 +388,31 @@ void print_str(FILE* fout, char* str)
 int update_pop_features(int curr_gen)
 {
    /* returns 1 if all loci are fixed */
-   int nfixed=0, i, j, loc0, loc1;
+   int nfixed = 0, i, j;
+   int loc0 = sloci[0][0] * nloci + sloci[0][1];  /* 1st selected locus */
+   int loc1 = sloci[1][0] * nloci + sloci[1][1];  /* 2nd selected locus */
    char gt;
+   double small = 0.1/(nchromo * nloci);
 
    /* count 2-loci genotypes, ind i has genotype gt */
-   memset(gt_freqs, 0, ngt * sizeof(double));
+   memset(gt2_freqs, 0, ngt_sloci * sizeof(double));
    for (i = 0; i < N; i++) {
-      loc0 = sloci[0][0] * 4 + sloci[0][1];
-      loc1 = sloci[1][0] * 4 + sloci[1][1];
-      gt = pop[curr_gen][i][loc0] * 4 + pop[curr_gen][i][loc1];
-      gt_freqs[gt] ++;
+      gt = pop[curr_gen][i][loc0] * 4 + pop[curr_gen][i][loc1]; /* genotype at 2 loci */
+      gt2_freqs[gt] ++;
    }
-   for (i = 0; i < ngt; i++) gt_freqs[i] /= (double)N;
+   for (i = 0; i < ngt_sloci; i++) gt2_freqs[i] /= (double)N;
 
    /* count alleles at each of the nchromo*nloci loci */
    memset(f_allele, 0, nchromo * nloci * sizeof(double));
-   for (i = 0; i < N; i++) for (j = 0; j < nchromo * nloci; j++) {
-      gt = pop[curr_gen][i][j];
-      if (gt >> 1) f_allele[j]++;
-      if (gt & 1)  f_allele[j]++;
-   }
+   for (i = 0; i < N; i++)
+      for (j = 0; j < nchromo * nloci; j++) {
+         gt = pop[curr_gen][i][j];
+         if (gt >> 1) f_allele[j]++;
+         if (gt & 1)  f_allele[j]++;
+      }
    for (j = 0; j < nchromo * nloci; j++) {
       f_allele[j] /= 2.0 * N;
-      nfixed += (f_allele[j] < 0.5 / (nchromo * nloci) || f_allele[j]>1 - 0.5 / (nchromo * nloci));
+      nfixed += (f_allele[j] < small || f_allele[j] > 1 - small);
    }
    return(nfixed == nchromo * nloci);
 }
@@ -434,18 +420,18 @@ int update_pop_features(int curr_gen)
 int print_pop_features(FILE* fout, int curr_gen)
 {
    int i, j;
-   double h = 0, f_alien=0;  /* average heterozygosity at all loci*/
+   double h = 0, f_alien = 0;  /* average heterozygosity at all loci*/
 
    if (print_opt == 0 && debug == 0) return(0);
-   update_pop_features(curr_gen);
 
    if (print_opt & 1) /* 4x4 GT freqs at selected loci */
       for (i = 0; i < 4 * 4; i++)
-         fprintf(fout, "\t%.6f", gt_freqs[i]);
+         fprintf(fout, "\t%.6f", gt2_freqs[i]);
    if (print_opt & 2) { /* average heterozygosity */
       for (i = 0; i < N; i++) for (j = 0; j < nchromo * nloci; j++)
          if (pop[curr_gen][i][j] == 1 || pop[curr_gen][i][j] == 2) h++;
-      for (j = 0; j < nchromo * nloci; j++) f_alien += f_allele[j] / (nchromo * nloci);
+      for (j = 0; j < nchromo * nloci; j++)
+         f_alien += f_allele[j] / (nchromo * nloci);
       fprintf(fout, "\t%.6f\t%.6f", h / (N * nchromo * nloci), f_alien);
    }
    if (print_opt & 4) {  /* allele freq at nchromo*nloci loci */
@@ -458,66 +444,9 @@ int print_pop_features(FILE* fout, int curr_gen)
       printf("\nfreqs for 4x4 genotypes at 2 selected loci\n");
       for (i = 0; i < 4; i++) {  /* */
          for (j = 0; j < 4; j++)
-            printf("%10.6f", gt_freqs[i*4+j]);
+            printf("%10.6f", gt2_freqs[i * 4 + j]);
          printf("\n");
       }
    }
    return(0);
-}
-
-int main(int argc, char* argv[])
-{
-   char ctlf[4096] = "fw-control0.txt", outf[4096] = "out.txt", timestr[64];
-   int i, igen;
-
-   if (argc > 1) strcpy(ctlf, argv[1]);
-   if (argc > 2) strcpy(outf, argv[2]);
-   get_options(ctlf);
-   starttimer();
-
-   /* think about how to initialize seed with mutliple threads. */
-   for (i = 0; i < nthreads; ++i)  SetSeed(-123, i);
-   printf("2-loci selection scheme: ");
-   matout2(stdout, gt_fitness, 4, 4, 10, 5);
-
-   initialize(outf);
-   // thread_data[0].ind_start = 0; thread_data[0].nind = N;
-   if (nthreads > 1) {
-      int start = 0, remaining = N% nthreads, per_thread = N / nthreads;
-      for (i = 0; i < nthreads; ++i) {
-         thread_data[i].ind_start = start;
-         thread_data[i].nind = per_thread + (remaining > 0 ? 1 : 0);
-         if (remaining) remaining--;
-         start += thread_data[i].nind;
-         printf("Thread %2d : ind %5d -- %5d\n", i + 1, thread_data[i].ind_start + 1, thread_data[i].ind_start + thread_data[i].nind);
-      }
-      threads_init();
-   }
-
-   for (igen = 0; igen < ngen; igen++) {
-      if (noisy >= 3 && N >= 100 && ngen > 100 && (igen+1) % 5 == 0)
-         printf("\n*** Gen %4d (%s): ***", igen+1, printtime(timestr));
-      if (print_opt) fprintf(fout, "%d", igen);
-      individual_fitness(curr_gen);
-      if (print_opt) print_pop_features(fout, curr_gen);
-
-      if (nthreads > 1) {
-         /* work: -1: end; 0: idle waiting for work; 1: update_times; 2: loglike calculation */
-         threads_wakeup((int)1, NULL);
-      }
-      else
-         reproduction(0, N, 0);
-      curr_gen = !curr_gen;
-   }
-   if (print_opt) {
-      fprintf(fout, "\ngenotypes in generation #%d (N = %d)\n", ngen, N);
-      for (i = 0; i < N; i++) {
-         fprintf(fout, "indiv %2d: ", i + 1);
-         print_str(fout, pop[!curr_gen][i]);
-      }
-   }
-
-   freemem();
-   if (print_opt) fclose(fout);
-   if (nthreads > 1) threads_exit();
 }

@@ -1,7 +1,8 @@
 ﻿#include "fw.h"
 
 extern int debug;
-extern int nthreads, thread_start;
+extern int N;
+extern int nthreads, thread_start, thread_step;
 thread_data_t thread_data[NTHREADS];
 
 #if(defined(__linux__) && defined(PIN_THREADS_CORE))
@@ -20,10 +21,9 @@ void pin_to_core(int t)
 void* thread_worker(void* arg)
 {
    int tid = (int)arg;
-   int i0 = thread_data[tid].ind_start, i1 = i0 + thread_data[tid].nind;
 
 #if(defined(__linux__) && defined(PIN_THREADS_CORE))
-   pin_to_core(thread_start + tid);
+   pin_to_core(thread_start + tid * thread_step);
 #endif
 
    pthread_mutex_lock(&thread_data[tid].mutex);
@@ -33,7 +33,7 @@ void* thread_worker(void* arg)
       if (thread_data[tid].work == 0)
          pthread_cond_wait(&thread_data[tid].cond, &thread_data[tid].mutex);
       if (thread_data[tid].work > 0) {
-         if (debug) printf("Thread %d working, ind %5d -%5d\n", tid, i0 + 1, i1);
+         if (debug) printf("\nThread %d working\n", tid+1);
 
          /* work: -1: end; 0: idle waiting for work; 1: baby boom */
          if (thread_data[tid].work == 1)
@@ -41,7 +41,7 @@ void* thread_worker(void* arg)
          else
             zerror("thread work not recognised...");
 
-         if (debug) printf("\t\t\t\tThread %d finished, loci %5d -%5d\n", tid, i0 + 1, i1);
+         if (debug) printf("\nThread %d finished\n", tid+1);
          thread_data[tid].work = 0;
          pthread_cond_signal(&thread_data[tid].cond);
       }
@@ -54,12 +54,25 @@ void* thread_worker(void* arg)
 
 void threads_init(void)
 {
-   int tid;
-   for (tid = 0; tid < nthreads; ++tid) {
-      thread_data[tid].work = 0;
-      pthread_mutex_init(&thread_data[tid].mutex, NULL);
-      pthread_cond_init(&thread_data[tid].cond, NULL);
-      if (pthread_create(&thread_data[tid].thread, NULL, thread_worker, (void*)tid))
+   int i;
+   int start = 0, remaining = N % nthreads, per_thread = N / nthreads;
+
+   printf("\nAssigning individuals to threads\n");
+   for (i = 0; i < nthreads; ++i) {
+      thread_data[i].ind_start = start;
+      thread_data[i].nind = per_thread + (remaining > 0 ? 1 : 0);
+      if (remaining) remaining--;
+      start += thread_data[i].nind;
+      printf("Thread %3d : ind %5d -- %5d\n", i + 1, thread_data[i].ind_start + 1, 
+         thread_data[i].ind_start + thread_data[i].nind);
+   }
+   printf("\n");
+
+   for (i = 0; i < nthreads; ++i) {
+      thread_data[i].work = 0;
+      pthread_mutex_init(&thread_data[i].mutex, NULL);
+      pthread_cond_init(&thread_data[i].cond, NULL);
+      if (pthread_create(&thread_data[i].thread, NULL, thread_worker, (void*)i))
          puts("Cannot create thread");
    }
 }

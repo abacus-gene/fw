@@ -1,9 +1,8 @@
-/* fw-sub.c
+/* tools-sub.c
 */
-
 #include "fw.h"
 
-unsigned int z_rndu[NTHREADS] = { 1237,1237,1237,1237,1237,1237,1237 };
+unsigned int z_rndu[NTHREADS];
 
 double rndu(int thread_id)
 {
@@ -13,13 +12,39 @@ double rndu(int thread_id)
    return ldexp((double)(z_rndu[thread_id]), -32);
 }
 
+
 void SetSeed(int seed, int thread_id)
 {
-   /* Note seed is of type int with -1 meaning "please find a seed". */
-   if (seed <= 0)
-      seed = abs(2 * (int)time(NULL) + 1);
+/* Note seed is of type int with -1 meaning "please find a seed".
+   z_rndu is of type unsigned int.
+*/
+   int PrintSeed = 0;
+   if (sizeof(int) != 4)
+      zerror("oh-oh, we are in trouble.  int not 32-bit?  rndu() assumes 32-bit int.");
+
+   if (seed <= 0) {
+      FILE* frand = fopen("/dev/urandom", "r");
+      if (frand) {
+         if (fread(&seed, sizeof(int), 1, frand) != 1)
+            zerror("failure to read white noise...");
+         fclose(frand);
+         seed = abs(seed * 2 - 1);
+      }
+      else {
+         seed = abs(1234 * (int)time(NULL) + 1);
+      }
+
+      if (PrintSeed) {
+         FILE* fseed;
+         fseed = fopen("SeedUsed", "w");
+         if (fseed == NULL) zerror("can't open file SeedUsed.");
+         fprintf(fseed, "%d\n", seed);
+         fclose(fseed);
+      }
+   }
    z_rndu[thread_id] = (unsigned int)seed;
 }
+
 
 int zero(double x[], int n)
 {
@@ -92,7 +117,6 @@ char* printtime(char timestr[])
    return (timestr);
 }
 
-
 FILE* zopen(char* filename, char* mode)
 {
    FILE* fp;
@@ -112,7 +136,6 @@ FILE* zopen(char* filename, char* mode)
    }
    return(fp);
 }
-
 
 int matout(FILE* fout, double x[], int n, int m)
 {
@@ -137,7 +160,6 @@ int matout2(FILE* fout, double x[], int n, int m, int wid, int deci)
    }
    return (0);
 }
-
 
 int matIout(FILE* fout, int x[], int n, int m)
 {

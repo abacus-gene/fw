@@ -11,7 +11,7 @@
 #include<time.h>
 #include<stdarg.h>
 
-#define NTHREADS 18
+#define NTHREADS 256
 #define PIN_THREADS_CORE
 #include<pthread.h>
 
