@@ -8,8 +8,8 @@
          rec_rate = 0.057 0.057 0.00057   * r0 r1 r2
       prob_misseg = 0.0      * probability of mis-segregation (gamete loss) when no crossover
       prob_misseg = 0.45     * probability of mis-segregation (gamete loss) when no crossover
-                N = 1280    * 16384 * population size
-          nchromo = 2 *16       * No of chromosomes in the genome
+                N = 1280     * 16384 * population size
+          nchromo = 5        * No of chromosomes in the genome
             nloci = 20       * No of loci per chromosome
              ngen = 100000   * No of generations
             nrepl = 100      * No of replicates
@@ -22,7 +22,7 @@
      prob_asexual = 0  * 0.05 : asexual 
 
    selected_loci = 1 1  1 2     /* chr1, locus1 & chr2, locus1 */
-      gt_fitness = 1    1    1    1        /* AABB AABb AAbB AAbb */
+      gt_fitness = 1    1    1    10       /* AABB AABb AAbB AAbb */
                    1    1    1    1        /* AaBB AaBb AabB Aabb */
                    1    1    1    1        /* aABB aABb aAbB aAbb */
                    1    1    1    1        /* aaBB aaBb aabB aabb */

@@ -135,15 +135,21 @@ int simulate_1replicate(int model, int replicate)
 
 int main(int argc, char* argv[])
 {
-   char ctlf[4096] = "fw-control0.txt", outf[4096] = "out.txt", timestr[64];
+   char ctlf[4096] = "fw-control0.txt", outf[4096] = "out.txt", resf[4096] = "result.txt";
+   char timestr[64];
    int model = 1, ir, i, AAbb;
    double meantime = 0, t, pAAbb = 0, small = 0.1/N;
+   FILE* fresult;
 
    starttimer();
    if (argc > 1) strcpy(ctlf, argv[1]);
    if (argc > 2) strcpy(outf, argv[2]);
+   if (argc > 3) strcpy(resf, argv[3]);
    get_options(ctlf);
    initialize(outf);
+
+   fresult = zopen(resf, "w");
+   fprintf(fresult, "replicate\ttime\n");
 
    for (ir = 0; ir < nrepl; ir++) {
       //printf("\n*** Replicate %4d", ir + 1);
@@ -153,12 +159,14 @@ int main(int argc, char* argv[])
       if (1-gt2_freqs[0 * 4 + 3] < small)
          meantime += (t - meantime) / ++pAAbb;  /* running mean */
       printf("\r*** Replicate %4d (%s): %6.0f generations, %s\n", ir + 1, printtime(timestr), t, (AAbb ? "AAbb" : "  "));
+      fprintf(fresult, "%d\t%.0f\n", ir+1, t);
    }
 
    printf("\nP_AAbb = %7.4f", pAAbb/nrepl);
    printf("\nmean waitign time = %7.1f\n", meantime);
 
    freemem();
+   fclose(fresult);
    if (print_opt) fclose(fout);
    if (nthreads > 1) threads_exit();
 }
